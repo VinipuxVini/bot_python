@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Virtualenv
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env & secrets
+.env
+.env.*
+
+# Migrations
+migrations/*.pyc
+
+# Logs
+*.log
+
+# Nodejs (если есть)
+node_modules/
+
+# Yoyo migrations state
+.yoyo 
