@@ -97,7 +97,11 @@ async def delete_admin_id_handler(message: Message, state: FSMContext):
 
 @router.message()
 async def block_other_commands(message: Message):
-    if not await isAdmin(message.from_user.id):
+    user_id = message.from_user.id if message.from_user else None
+    if not user_id:
+        await message.answer("Ошибка: не удалось определить пользователя.")
+        return
+    if not await isAdmin(user_id):
         await message.answer(f"Недостаточно прав. \nДля доступа к функциям введите /admin_login и код.")
     else:
         await message.answer(f"Вы админ. \nНе доступная команда")
