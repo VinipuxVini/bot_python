@@ -15,6 +15,11 @@ async def get_all_users() -> List[Dict[str, Any]]:
         rows = await conn.fetch("SELECT * FROM users")
         return [dict(row) for row in rows]
 
+async def get_admins() -> List[Dict[str, Any]]:
+    async with _db_pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM users WHERE role = 'admin' or role = 'moderator'")
+        return [dict(row) for row in rows]
+
 async def get_user_by_telegram_id(telegram_id: int) -> Optional[Dict[str, Any]]:
     async with _db_pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", telegram_id)

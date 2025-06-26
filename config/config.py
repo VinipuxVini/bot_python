@@ -12,6 +12,7 @@ class Config:
     admin_id: str
     pg_url:str
     admin_code:str
+    moder_code:str
 
     @property
     def admins(self) -> List[int]:
@@ -24,5 +25,6 @@ def load_config() -> Config:
         admin_id=getenv("ADMIN_ID", ""),
         pg_url=getenv("PG_URL", ""),
         admin_code=getenv("ADMIN_CODE", ""),
+        moder_code=getenv("MODER_CODE", ""),
     )
 config = load_config() 
