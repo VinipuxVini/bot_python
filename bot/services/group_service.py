@@ -1,13 +1,11 @@
 from typing import Optional, Dict, Any
 import asyncpg
 from bot.database import database as db
-import bot.database.database as db_mod
-from aiogram.types import Chat
-import datetime
 
 
 async def get_all_active_groups():
-    return await db.get_all_groups()
+    groups = await db.get_all_groups()
+    return [g for g in groups if g.get('is_active', True)]
 
 async def add_group(chat_id: int, title: str):
     await db.add_group(chat_id, title)
@@ -23,7 +21,7 @@ async def get_group_by_chat_id(chat_id: int) -> Optional[Dict[str, Any]]:
 
 async def update_group_chat_id(old_chat_id: int, new_chat_id: int):
     # Обновление chat_id, если группа стала супергруппой
-    _db_pool: Optional[asyncpg.Pool] = db_mod._db_pool
+    _db_pool: Optional[asyncpg.Pool] = db._db_pool
     if _db_pool is None:
         raise Exception('Database pool is not initialized')
     async with _db_pool.acquire() as conn:
@@ -33,7 +31,7 @@ async def update_group_chat_id(old_chat_id: int, new_chat_id: int):
         )
 
 async def get_active_groups_by_title(title: str):
-    _db_pool = db_mod._db_pool
+    _db_pool = db._db_pool
     if _db_pool is None:
         raise Exception('Database pool is not initialized')
     rows = await _db_pool.fetch("SELECT * FROM groups WHERE title = $1 AND is_active = TRUE", title)
@@ -109,3 +107,24 @@ async def process_group_membership_change(event, bot):
         await handle_group_added(group_id, group_title, bot, admin_ids, now)
     elif new_status == "left" and old_status in ("member", "administrator"):
         await handle_group_removed(group_id, group_title, bot, admin_ids, now)
+
+async def get_sent_messages_in_range(start_time, end_time):
+    return await db.get_sent_messages_in_range(start_time, end_time)
+
+async def delete_sent_messages_in_range(start_time, end_time, bot):
+    messages = await db.get_sent_messages_in_range(start_time, end_time)
+    deleted = 0
+    failed_count = 0
+    for msg in messages:
+        try:
+            await bot.delete_message(msg["chat_id"], msg["message_id"])
+            await db.delete_sent_message(msg["chat_id"], msg["message_id"])
+            deleted += 1
+        except Exception:
+            await db.add_log(msg["chat_id"], str(e), "error")
+            failed_count += 1
+            pass
+    return f"Всего {len(messages)}\n✅ Удалено: {deleted}\n❌ Не удалено: {failed_count} "
+
+async def get_sent_message_time_ranges(interval_minutes=30):
+    return await db.get_sent_message_time_ranges(interval_minutes)

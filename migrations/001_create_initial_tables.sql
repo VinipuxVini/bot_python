@@ -55,3 +55,14 @@ CREATE TABLE IF NOT EXISTS reports (
     sent_groups BIGINT[] DEFAULT '{}',    -- массив chat_id
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Таблица для хранения отправленных сообщений ботом
+CREATE TABLE IF NOT EXISTS sent_messages (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Индекс для быстрого поиска по времени
+CREATE INDEX IF NOT EXISTS idx_sent_messages_sent_at ON sent_messages(sent_at);
+-- Для автоудаления старых записей используйте планировщик или задачу в коде (например, через cron или периодическую задачу в боте) 

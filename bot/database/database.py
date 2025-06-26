@@ -1,5 +1,7 @@
 import asyncpg
 from typing import Optional, Dict, Any, List
+import pytz
+from datetime import datetime, timedelta
 
 _db_pool: Optional[asyncpg.Pool] = None
 
@@ -145,4 +147,61 @@ async def get_all_errors() -> List[Dict[str, Any]]:
     async with _db_pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM logs WHERE level = 'error' ORDER BY created_at DESC")
         return [dict(row) for row in rows]
+
+
+
+
+
+async def save_sent_message(chat_id: int, message_id: int, sent_at):
+    async with _db_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO sent_messages (chat_id, message_id, sent_at) VALUES ($1, $2, $3)",
+            chat_id, message_id, sent_at
+        )
+
+async def get_sent_messages_in_range(start_time, end_time):
+    async with _db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM sent_messages WHERE sent_at BETWEEN $1 AND $2",
+            start_time, end_time
+        )
+        return [dict(row) for row in rows]
+
+async def delete_sent_message(chat_id: int, message_id: int):
+    async with _db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM sent_messages WHERE chat_id = $1 AND message_id = $2",
+            chat_id, message_id
+        )
+
+async def delete_old_sent_messages():
+    # Удаляет сообщения старше 24 часов (GMT+5)
+    tz = pytz.timezone('Asia/Tashkent')  # GMT+5
+    now = datetime.now(tz)
+    cutoff = now - timedelta(hours=24)
+    async with _db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM sent_messages WHERE sent_at < $1",
+            cutoff
+        )
+
+async def get_sent_message_time_ranges(interval_minutes=30):
+    # Возвращает список уникальных временных диапазонов (start, end) для сообщений за последние 24 часа
+    tz = pytz.timezone('Asia/Tashkent')
+    now = datetime.now(tz).replace(tzinfo=None)
+    cutoff = now - timedelta(hours=24)
+    async with _db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT sent_at FROM sent_messages WHERE sent_at >= $1 ORDER BY sent_at ASC",
+            cutoff
+        )
+        times = [row['sent_at'] for row in rows]
+    # Группируем по интервалам
+    ranges = set()
+    for t in times:
+        minutes = (t.hour * 60 + t.minute) // interval_minutes * interval_minutes
+        start = t.replace(hour=minutes // 60, minute=minutes % 60, second=0, microsecond=0)
+        end = start + timedelta(minutes=interval_minutes)
+        ranges.add((start, end))
+    return sorted(list(ranges))
 

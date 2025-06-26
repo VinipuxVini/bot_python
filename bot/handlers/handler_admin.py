@@ -2,12 +2,15 @@ from aiogram import F, Bot, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardRemove
+import pytz
+from datetime import datetime, timedelta
 
 from bot.filters.role import RoleFilter
 from bot.keyboards.keyboard_admin import admin_main_kb
 from bot.services import group_service
 from bot.services.admin_service import get_admins, isAdmin, send_announcement
+from bot.services.group_service import get_sent_messages_in_range, delete_sent_messages_in_range, get_sent_message_time_ranges
 
 router = Router()
 router.message.filter(F.chat.type.in_({"private"}))
@@ -32,6 +35,10 @@ class DeleteLast(StatesGroup):
 class DeleteAdmin(StatesGroup):
     waiting_admin_id = State()
     
+class DeleteMessagesFSM(StatesGroup):
+    waiting_time_range = State()
+    waiting_confirm = State()
+
 # Обработка кнопок
 @router.message(Command("report"))
 async def report_button_handler(message: Message):
@@ -87,12 +94,90 @@ async def back_button_handler(message: Message):
 @router.message(Announcement.waiting_text)
 async def dannouncement(message: Message, state: FSMContext):
     text = message.text
-    await message.answer(await send_announcement(text, message.bot))
+    await message.answer(await send_announcement(message.from_user.id, text, message.bot))
     await state.clear()
 
+@router.message(Command("delete_last"))
+async def start_delete_last(message: Message, state: FSMContext):
+    # Получаем доступные диапазоны времени из базы
+    ranges = await get_sent_message_time_ranges()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}", callback_data=f"range_{start.strftime('%H_%M')}_{end.strftime('%H_%M')}")]
+        for start, end in ranges
+    ] + [[InlineKeyboardButton(text="Ввести вручную", callback_data="manual_input")]])
+    await message.answer("Выберите диапазон времени или введите вручную:", reply_markup=kb)
+    await state.set_state(DeleteMessagesFSM.waiting_time_range)
 
+@router.callback_query(DeleteMessagesFSM.waiting_time_range)
+async def process_time_range_callback(call: CallbackQuery, state: FSMContext):
+    tz = pytz.timezone('Asia/Tashkent')
+    now = datetime.now(tz)
+    today = now.date()
+    if call.data.startswith("range_"):
+        # Парсим время из callback_data
+        _, start_h, start_m, end_h, end_m = call.data.split("_")
+        start_time = datetime.combine(today, datetime.strptime(f"{start_h}:{start_m}", "%H:%M").time(), tz)
+        end_time = datetime.combine(today, datetime.strptime(f"{end_h}:{end_m}", "%H:%M").time(), tz)
+        start_time = start_time.replace(tzinfo=None)
+        end_time = end_time.replace(tzinfo=None)
+        await state.update_data(start_time=start_time, end_time=end_time)
+        messages = await get_sent_messages_in_range(start_time, end_time)
+        if not messages:
+            await call.message.answer("Сообщения не найдены в этом диапазоне.")
+            await state.clear()
+            return
+        text = f"Будут удалены {len(messages)} сообщений. Подтвердить?"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_delete")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_delete")]
+        ])
+        await call.message.answer(text, reply_markup=kb)
+        await state.set_state(DeleteMessagesFSM.waiting_confirm)
+    elif call.data == "manual_input":
+        await call.message.answer("Введите диапазон времени в формате HH:MM-HH:MM")
 
+@router.message(DeleteMessagesFSM.waiting_time_range)
+async def process_manual_time_range(message: Message, state: FSMContext):
+    tz = pytz.timezone('Asia/Tashkent')
+    now = datetime.now(tz)
+    today = now.date()
+    try:
+        time_range = message.text.replace(" ", "")
+        start_str, end_str = time_range.split("-")
+        start_time = datetime.combine(today, datetime.strptime(start_str, "%H:%M").time(), tz)
+        end_time = datetime.combine(today, datetime.strptime(end_str, "%H:%M").time(), tz)
+    except Exception:
+        await message.answer("Некорректный формат. Введите в формате HH:MM-HH:MM")
+        return
+    # Делаем naive datetime
+    start_time = start_time.replace(tzinfo=None)
+    end_time = end_time.replace(tzinfo=None)
+    await state.update_data(start_time=start_time, end_time=end_time)
+    messages = await get_sent_messages_in_range(start_time, end_time)
+    if not messages:
+        await message.answer("Сообщения не найдены в этом диапазоне.")
+        await state.clear()
+        return
+    text = f"Будут удалены {len(messages)} сообщений. Подтвердить?"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_delete")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_delete")]
+    ])
+    await message.answer(text, reply_markup=kb)
+    await state.set_state(DeleteMessagesFSM.waiting_confirm)
 
+@router.callback_query(DeleteMessagesFSM.waiting_confirm)
+async def confirm_delete_callback(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    start_time = data["start_time"]
+    end_time = data["end_time"]
+    await call.message.answer(await delete_sent_messages_in_range(start_time, end_time, call.bot))
+    await state.clear()
+
+@router.callback_query(lambda c: c.data == "cancel_delete")
+async def cancel_delete_callback(call: CallbackQuery, state: FSMContext):
+    await call.message.answer("Удаление отменено.")
+    await state.clear()
 
 # @router.message()
 # async def block_other_commands(message: Message):

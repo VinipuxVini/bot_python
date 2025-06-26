@@ -2,6 +2,8 @@ from aiogram.types import User
 from bot.services import group_service
 from config.config import config
 from bot.database import database as db
+import pytz
+from datetime import datetime
 
 async def checkUser(telegram_id):
     if await db.get_user_by_telegram_id(telegram_id):
@@ -49,16 +51,20 @@ async def make_admin(telegram_id: int):
 async def delete_admin_role(admin_id:str):
     await db.set_user_role(int(admin_id), "user")
 
-async def send_announcement(text, bot):
+async def send_announcement(user_id: int, text, bot):
     groups = await group_service.get_all_active_groups()
+    tz = pytz.timezone('Asia/Tashkent')
+    now = datetime.now(tz)
+    naive_now = now.astimezone(pytz.utc).replace(tzinfo=None)
     succes_count = 0
     failed_count = 0
     for group in groups:
         try:
-            await bot.send_message(group['chat_id'], text)
+            msg = await bot.send_message(group['chat_id'], text)
+            await db.save_sent_message(group['chat_id'], msg.message_id, naive_now)
             succes_count += 1
         except Exception as e:
-            await db.add_log(group['title'], str(e), "error")
+            await db.add_log(user_id, f"{group['title']}: {str(e)}", "error")
             failed_count += 1
             await bot.send_message(config.admin_id, f"Ошибка при отправке объявления в группу {group['title']}:\n{str(e)}")
             pass
