@@ -66,10 +66,10 @@ async def add_group(chat_id: int, title: str):
             chat_id, title
         )
 
-async def update_group(chat_id: int, title: str = None):
+async def update_group(chat_id: int, title: str):
     async with _db_pool.acquire() as conn:
         await conn.execute(
-            "UPDATE groups SET title = COALESCE($2, title) WHERE chat_id = $1",
+            "UPDATE groups SET title = $2 WHERE chat_id = $1",
             chat_id, title
         )
 
@@ -79,23 +79,35 @@ async def deactivate_group(chat_id: int):
             "UPDATE groups SET is_active = FALSE WHERE chat_id = $1",
             chat_id
         )
-
-# FILE DESCRIPTIONS
-async def add_file_description(file_id: str, file_name: str, description: str, uploaded_by: int, group_id: int = None):
+        
+async def delete_group(chat_id: int):
     async with _db_pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO file_descriptions (file_id, file_name, description, uploaded_by, group_id) VALUES ($1, $2, $3, $4, $5)",
-            file_id, file_name, description, uploaded_by, group_id
+            "DELETE FROM groups WHERE chat_id = $1",
+            chat_id
         )
 
-async def get_file_description_by_file_id(file_id: str) -> Optional[Dict[str, Any]]:
+async def get_all_groups():
     async with _db_pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM file_descriptions WHERE file_id = $1", file_id)
-        return dict(row) if row else None
+        rows = await conn.fetch("SELECT * FROM groups WHERE is_active = TRUE")
+        return [dict(row) for row in rows]
 
-async def get_file_descriptions_by_group(group_id: int) -> List[Dict[str, Any]]:
+async def activate_group(chat_id: int, title: str = None):
     async with _db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM file_descriptions WHERE group_id = $1", group_id)
+        if title:
+            await conn.execute(
+                "UPDATE groups SET is_active = TRUE, title = $2 WHERE chat_id = $1",
+                chat_id, title
+            )
+        else:
+            await conn.execute(
+                "UPDATE groups SET is_active = TRUE WHERE chat_id = $1",
+                chat_id
+            )
+
+async def get_active_groups_by_title(title: str):
+    async with _db_pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM groups WHERE title = $1 AND is_active = TRUE", title)
         return [dict(row) for row in rows]
 
 # REPORTS

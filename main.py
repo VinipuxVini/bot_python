@@ -10,6 +10,7 @@ from bot.database import database as db
 from config.config import load_config
 from bot.handlers.handler_admin import router
 from bot.handlers.handler_user import router as router_user
+from bot.handlers.handler_group import router as router_group
 # Настройка логов
 logging.basicConfig(level=logging.INFO)
 config = load_config()
@@ -28,8 +29,9 @@ async def main():
         BotCommand(command="admin_login", description="Вход в админку"),
     ])
     # Регистрация роутеров
-    dp.include_router(router_user)
     dp.include_router(router)
+    dp.include_router(router_user)
+    dp.include_router(router_group)
 
     print("✅ Бот запущен!")
     await dp.start_polling(bot)

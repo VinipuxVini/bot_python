@@ -1,4 +1,4 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -8,6 +8,7 @@ from bot.keyboards.keyboard_admin import admin_main_kb
 from bot.services.admin_service import add_user, check_admin_code, make_admin
 
 router = Router()
+router.message.filter(F.chat.type.in_({"private"}))
 
 class LoginState(StatesGroup):
     waiting_admin_code = State()
@@ -32,8 +33,12 @@ async def admin_login_start_handler(message: Message, state: FSMContext):
 @router.message(LoginState.waiting_admin_code)
 async def admin_login_check_handler(message: Message, state: FSMContext):
     code = (message.text or "").strip()
+    user_id = message.from_user.id if message.from_user else None
+    if not user_id:
+        await message.answer("Ошибка: не удалось определить пользователя.")
+        return
     if await check_admin_code(code):
-        await make_admin(message.from_user.id)
+        await make_admin(user_id)
         await message.answer("Вы авторизованы как администратор!", reply_markup=admin_main_kb())
     else:
         await message.answer("Неверный код. Вы не админ.")
